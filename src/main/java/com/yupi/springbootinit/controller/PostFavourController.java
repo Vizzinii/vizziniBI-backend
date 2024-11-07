@@ -43,25 +43,6 @@ public class PostFavourController {
     @Resource
     private UserService userService;
 
-    /**
-     * 收藏 / 取消收藏
-     *
-     * @param postFavourAddRequest
-     * @param request
-     * @return resultNum 收藏变化数
-     */
-    @PostMapping("/")
-    public BaseResponse<Integer> doPostFavour(@RequestBody PostFavourAddRequest postFavourAddRequest,
-            HttpServletRequest request) {
-        if (postFavourAddRequest == null || postFavourAddRequest.getPostId() <= 0) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR);
-        }
-        // 登录才能操作
-        final User loginUser = userService.getLoginUser(request);
-        long postId = postFavourAddRequest.getPostId();
-        int result = postFavourService.doPostFavour(postId, loginUser);
-        return ResultUtils.success(result);
-    }
 
     /**
      * 获取我收藏的帖子列表

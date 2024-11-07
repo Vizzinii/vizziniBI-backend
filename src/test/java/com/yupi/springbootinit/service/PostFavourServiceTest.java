@@ -3,8 +3,10 @@ package com.yupi.springbootinit.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.yupi.springbootinit.model.entity.Post;
-import com.yupi.springbootinit.model.entity.User;
+
 import javax.annotation.Resource;
+
+import com.yupi.springbootinit.model.entity.User;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -27,12 +29,6 @@ class PostFavourServiceTest {
     @BeforeAll
     static void setUp() {
         loginUser.setId(1L);
-    }
-
-    @Test
-    void doPostFavour() {
-        int i = postFavourService.doPostFavour(1L, loginUser);
-        Assertions.assertTrue(i >= 0);
     }
 
     @Test

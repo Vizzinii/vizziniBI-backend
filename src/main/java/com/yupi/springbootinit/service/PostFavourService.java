@@ -16,14 +16,6 @@ import com.yupi.springbootinit.model.entity.User;
  */
 public interface PostFavourService extends IService<PostFavour> {
 
-    /**
-     * 帖子收藏
-     *
-     * @param postId
-     * @param loginUser
-     * @return
-     */
-    int doPostFavour(long postId, User loginUser);
 
     /**
      * 分页获取用户收藏的帖子列表

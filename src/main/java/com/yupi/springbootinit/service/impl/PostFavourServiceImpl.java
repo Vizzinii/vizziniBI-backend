@@ -10,7 +10,6 @@ import com.yupi.springbootinit.exception.BusinessException;
 import com.yupi.springbootinit.mapper.PostFavourMapper;
 import com.yupi.springbootinit.model.entity.Post;
 import com.yupi.springbootinit.model.entity.PostFavour;
-import com.yupi.springbootinit.model.entity.User;
 import com.yupi.springbootinit.service.PostFavourService;
 import com.yupi.springbootinit.service.PostService;
 import javax.annotation.Resource;
@@ -31,29 +30,6 @@ public class PostFavourServiceImpl extends ServiceImpl<PostFavourMapper, PostFav
     @Resource
     private PostService postService;
 
-    /**
-     * 帖子收藏
-     *
-     * @param postId
-     * @param loginUser
-     * @return
-     */
-    @Override
-    public int doPostFavour(long postId, User loginUser) {
-        // 判断是否存在
-        Post post = postService.getById(postId);
-        if (post == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
-        }
-        // 是否已帖子收藏
-        long userId = loginUser.getId();
-        // 每个用户串行帖子收藏
-        // 锁必须要包裹住事务方法
-        PostFavourService postFavourService = (PostFavourService) AopContext.currentProxy();
-        synchronized (String.valueOf(userId).intern()) {
-            return postFavourService.doPostFavourInner(userId, postId);
-        }
-    }
 
     @Override
     public Page<Post> listFavourPostByPage(IPage<Post> page, Wrapper<Post> queryWrapper, long favourUserId) {
