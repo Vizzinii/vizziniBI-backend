@@ -278,9 +278,15 @@ public class ChartController {
         ThrowUtils.throwIf(StringUtils.isNotBlank(name) && name.length()>100 ,ErrorCode.PARAMS_ERROR,"图表名称过长");
         ThrowUtils.throwIf(StringUtils.isBlank(goal),ErrorCode.PARAMS_ERROR,"分析目标为空");
 
+        // 读取用户输入的分析目标
+        StringBuilder userInput = new StringBuilder();
+        userInput.append("你是一位数据分析师。接下来我会给你我的分析目标和原始数据，请你告诉我你的分析结论。").append("\n");
+        userInput.append("分析目标：").append(goal).append("\n");
+
         // 读取用户上传的文件
         String result = excelToCsv(multipartFile);
-        return ResultUtils.success(result);
+        userInput.append("我的数据是：").append(result).append("\n");
+        return ResultUtils.success(userInput.toString());
 
 //
 //        User loginUser = userService.getLoginUser(request);
