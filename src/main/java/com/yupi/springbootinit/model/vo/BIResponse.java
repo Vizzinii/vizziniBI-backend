@@ -9,4 +9,5 @@ import lombok.Data;
 public class BIResponse {
     private String genChart ;
     private String genResult;
+    private Long chartId;
 }

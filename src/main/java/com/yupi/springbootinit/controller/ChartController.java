@@ -319,8 +319,8 @@ public class ChartController {
             throw new BusinessException(ErrorCode.PARAMS_ERROR,"生成格式错误，建议重新问一遍");
         }
         // 返回结果已经用 【【【【【 分割成两段，其中第一段是js代码，第二段是分析结论
-        String genChart = splits[1];
-        String genResult = splits[2];
+        String genChart = splits[1].trim();
+        String genResult = splits[2].trim();
 
         // 把数据插入到数据库
         Chart chart = new Chart();
@@ -338,7 +338,7 @@ public class ChartController {
         BIResponse biResponse = new BIResponse();
         biResponse.setGenChart(genChart);
         biResponse.setGenResult(genResult);
-
+        biResponse.setChartId(chart.getId());
 
         return ResultUtils.success(biResponse);
 //
