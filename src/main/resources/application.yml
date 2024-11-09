@@ -90,3 +90,9 @@ cos:
     secretKey: xxx
     region: xxx
     bucket: xxx
+# 讯飞api配置
+xunfei:
+  client:
+    appid:
+    apiSecret:
+    apiKey:

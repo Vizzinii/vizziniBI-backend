@@ -13,6 +13,7 @@ import com.yupi.springbootinit.constant.FileConstant;
 import com.yupi.springbootinit.constant.UserConstant;
 import com.yupi.springbootinit.exception.BusinessException;
 import com.yupi.springbootinit.exception.ThrowUtils;
+import com.yupi.springbootinit.manager.SparkManager;
 import com.yupi.springbootinit.model.dto.chart.*;
 
 import com.yupi.springbootinit.model.dto.file.UploadFileRequest;
@@ -20,6 +21,7 @@ import com.yupi.springbootinit.model.entity.Chart;
 
 import com.yupi.springbootinit.model.entity.User;
 import com.yupi.springbootinit.model.enums.FileUploadBizEnum;
+import com.yupi.springbootinit.model.vo.BIResponse;
 import com.yupi.springbootinit.service.ChartService;
 import com.yupi.springbootinit.service.UserService;
 
@@ -56,6 +58,9 @@ public class ChartController {
 
     @Resource
     private UserService userService;
+
+    @Resource
+    private SparkManager sparkManager;
 
     private final static Gson GSON = new Gson();
 
@@ -268,7 +273,7 @@ public class ChartController {
      * @return
      */
     @PostMapping("/analysis")
-    public BaseResponse<String> ChartAutoAnalysis(@RequestPart("file") MultipartFile multipartFile,
+    public BaseResponse<BIResponse> ChartAutoAnalysis(@RequestPart("file") MultipartFile multipartFile,
                                                   ChartAutoAnalysisRequest chartAutoAnalysisRequest, HttpServletRequest request) {
         String name = chartAutoAnalysisRequest.getName();
         String goal = chartAutoAnalysisRequest.getGoal();
@@ -278,16 +283,64 @@ public class ChartController {
         ThrowUtils.throwIf(StringUtils.isNotBlank(name) && name.length()>100 ,ErrorCode.PARAMS_ERROR,"图表名称过长");
         ThrowUtils.throwIf(StringUtils.isBlank(goal),ErrorCode.PARAMS_ERROR,"分析目标为空");
 
+        // 读取用户信息，确保BI平台必须登录使用
+        User loginUser = userService.getLoginUser(request);
+
         // 读取用户输入的分析目标
         StringBuilder userInput = new StringBuilder();
-        userInput.append("你是一位数据分析师。接下来我会给你我的分析目标和原始数据，请你告诉我你的分析结论。").append("\n");
-        userInput.append("分析目标：").append(goal).append("\n");
+        //userInput.append("你是一位数据分析师。接下来我会给你我的分析目标和原始数据，请你告诉我你的分析结论。").append("\n"); //预设已经在manager里实现
+
+        // 首先填充分析需求
+        userInput.append("分析需求：").append("\n");
+        userInput.append(goal).append("\n");
+
+        // 其次填充需要生成的表类型，用户没有输入时默认生成折线图
+
+            userInput.append("生成图表类型：").append("\n");
+            userInput.append(chartType).append("\n");
+
+
+        // 再填充原始数据
+        userInput.append("原始数据：").append("\n");
+        String result = excelToCsv(multipartFile);
+        userInput.append(result).append("\n");
 
         // 读取用户上传的文件
-        String result = excelToCsv(multipartFile);
-        userInput.append("我的数据是：").append(result).append("\n");
-        return ResultUtils.success(userInput.toString());
+        //String result = excelToCsv(multipartFile);
+        //userInput.append("我的数据是：").append(result).append("\n");
+        //return ResultUtils.success(userInput.toString());
 
+        // 发送 http 请求
+        String juice = sparkManager.sendHttpTOSpark(userInput.toString());
+
+        // 拆分返回结果
+        String[] splits = juice.split("【【【【【");
+        if(splits.length < 1){
+            throw new BusinessException(ErrorCode.PARAMS_ERROR,"生成格式错误，建议重新问一遍");
+        }
+        // 返回结果已经用 【【【【【 分割成两段，其中第一段是js代码，第二段是分析结论
+        String genChart = splits[1];
+        String genResult = splits[2];
+
+        // 把数据插入到数据库
+        Chart chart = new Chart();
+        chart.setName(name);
+        chart.setGoal(goal);
+        chart.setChartType(chartType);
+        chart.setChartData(result); //csv数据
+        chart.setGenChart(genChart);
+        chart.setGenResult(genResult);
+        chart.setUserId(loginUser.getId());
+        boolean saveResult = chartService.save(chart);
+        ThrowUtils.throwIf(!saveResult,ErrorCode.OPERATION_ERROR,"图表信息保存失败");
+
+        // 把返回结果封装到vo里，返回给前端
+        BIResponse biResponse = new BIResponse();
+        biResponse.setGenChart(genChart);
+        biResponse.setGenResult(genResult);
+
+
+        return ResultUtils.success(biResponse);
 //
 //        User loginUser = userService.getLoginUser(request);
 //        // 文件目录：根据业务、用户来划分
