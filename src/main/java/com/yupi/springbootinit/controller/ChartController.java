@@ -1,5 +1,6 @@
 package com.yupi.springbootinit.controller;
 
+import cn.hutool.core.io.FileUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.google.gson.Gson;
@@ -13,6 +14,7 @@ import com.yupi.springbootinit.constant.FileConstant;
 import com.yupi.springbootinit.constant.UserConstant;
 import com.yupi.springbootinit.exception.BusinessException;
 import com.yupi.springbootinit.exception.ThrowUtils;
+import com.yupi.springbootinit.manager.RedissonManager;
 import com.yupi.springbootinit.manager.SparkManager;
 import com.yupi.springbootinit.model.dto.chart.*;
 
@@ -39,6 +41,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
+import java.util.Arrays;
+import java.util.List;
 
 import static com.yupi.springbootinit.utils.ExtelUtils.excelToCsv;
 
@@ -61,6 +65,9 @@ public class ChartController {
 
     @Resource
     private SparkManager sparkManager;
+
+    @Resource
+    private RedissonManager redissonManager;
 
     private final static Gson GSON = new Gson();
 
@@ -275,6 +282,11 @@ public class ChartController {
     @PostMapping("/analysis")
     public BaseResponse<BIResponse> ChartAutoAnalysis(@RequestPart("file") MultipartFile multipartFile,
                                                   ChartAutoAnalysisRequest chartAutoAnalysisRequest, HttpServletRequest request) {
+
+        // 读取用户信息，确保BI平台必须登录使用
+        User loginUser = userService.getLoginUser(request);
+
+        // 获取web端输入的信息
         String name = chartAutoAnalysisRequest.getName();
         String goal = chartAutoAnalysisRequest.getGoal();
         String chartType = chartAutoAnalysisRequest.getChartType();
@@ -283,8 +295,19 @@ public class ChartController {
         ThrowUtils.throwIf(StringUtils.isNotBlank(name) && name.length()>100 ,ErrorCode.PARAMS_ERROR,"图表名称过长");
         ThrowUtils.throwIf(StringUtils.isBlank(goal),ErrorCode.PARAMS_ERROR,"分析目标为空");
 
-        // 读取用户信息，确保BI平台必须登录使用
-        User loginUser = userService.getLoginUser(request);
+        // 校验文件大小与名称
+        long size = multipartFile.getSize();
+        String originalFilename = multipartFile.getOriginalFilename();
+        final long ONE_MB = 1024 * 1024L;
+        ThrowUtils.throwIf(size > ONE_MB, ErrorCode.PARAMS_ERROR,"上传文件过大");
+
+        // 校验文件类型（当前安全性仍较低）
+        String suffix = FileUtil.getSuffix(originalFilename);
+        final List<String> validFileSuffix = Arrays.asList("xlsx");
+        ThrowUtils.throwIf(!validFileSuffix.contains(suffix), ErrorCode.PARAMS_ERROR,"文件格式错误");
+
+        // 限流判断（这里是限制每个用户访问当前方法的次数，不影响用户访问其它方法）
+        redissonManager.doRateLimit("ChartAutoAnalysis_" + loginUser.getId());
 
         // 读取用户输入的分析目标
         StringBuilder userInput = new StringBuilder();
@@ -318,7 +341,7 @@ public class ChartController {
         if(splits.length < 1){
             throw new BusinessException(ErrorCode.PARAMS_ERROR,"生成格式错误，建议重新问一遍");
         }
-        // 返回结果已经用 【【【【【 分割成两段，其中第一段是js代码，第二段是分析结论
+        // 返回结果已经用 【【【【【 分割成两段，其中第一段是 JSON 代码，第二段是分析结论
         String genChart = splits[1].trim();
         String genResult = splits[2].trim();
 
@@ -333,6 +356,12 @@ public class ChartController {
         chart.setUserId(loginUser.getId());
         boolean saveResult = chartService.save(chart);
         ThrowUtils.throwIf(!saveResult,ErrorCode.OPERATION_ERROR,"图表信息保存失败");
+        // TODO 把每一次查询的原始数据表格 单独用一个表来插入，而不是把原始数据作为chart表的字段
+        // 解决方案：分库分表
+        // （因为单个用户上传的文件过大可能导致所有用户在查询表格时，都需要读取该表项，进而降低整体的查询开销）
+        // 分开存储：用每个chart唯一的id来给每个图表取名，降低查询开销
+        // 分开查询：之前是直接查询 chart 表取 chartData 字段，分表之后是读取每个chart 单独的 chart_{id} 数据表（用Mybatis的动态Sql实现）
+
 
         // 把返回结果封装到vo里，返回给前端
         BIResponse biResponse = new BIResponse();

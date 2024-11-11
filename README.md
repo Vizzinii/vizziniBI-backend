@@ -20,4 +20,8 @@
 - Swagger + Knife4j 项目接口文档
 - Hutool 工具库
 
+*2024-11-10 18:23 前后端联调成功*
 ![img.png](img.png)
+
+*2024-11-11 17:06 实现了用Redis控制流量*
+![img_1.png](img_1.png)
