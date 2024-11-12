@@ -12,6 +12,12 @@ import javax.annotation.Resource;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 配置api操作
+ *
+ * @author <a href="https://github.com/Vizzinii">济楚</a>
+ *
+ */
 @Component
 @Slf4j
 public class SparkManager {

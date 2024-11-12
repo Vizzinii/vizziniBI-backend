@@ -13,8 +13,8 @@ import java.util.List;
 /**
  * 编辑请求
  *
- * @author <a href="https://github.com/liyupi">程序员鱼皮</a>
- * @from <a href="https://yupi.icu">编程导航知识星球</a>
+ * @author <a href="https://github.com/Vizzinii">济楚</a>
+ *  
  */
 @Data
 public class ChartEditRequest implements Serializable {

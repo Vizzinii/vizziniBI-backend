@@ -6,6 +6,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * api配置
+ *
+ * @author <a href="https://github.com/Vizzinii">济楚</a>
+ */
 @Configuration
 @ConfigurationProperties(prefix = "xunfei.client")
 @Data

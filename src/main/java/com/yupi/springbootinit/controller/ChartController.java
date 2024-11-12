@@ -49,8 +49,8 @@ import static com.yupi.springbootinit.utils.ExtelUtils.excelToCsv;
 /**
  * 帖子接口
  *
- * @author <a href="https://github.com/liyupi">程序员鱼皮</a>
- * @from <a href="https://yupi.icu">编程导航知识星球</a>
+ * @author <a href="https://github.com/Vizzinii">济楚</a>
+ *  
  */
 @RestController
 @RequestMapping("/chart")

@@ -12,6 +12,12 @@ import org.springframework.stereotype.Component;
 import javax.annotation.Resource;
 
 /**
+ * 限流操作
+ *
+ * @author <a href="https://github.com/Vizzinii">济楚</a>
+ *
+ */
+/**
  * Manager 是自定义的通用代码，用来提供可公用的服务模块，是可以加入基础模板的高可复用性模块，无具体逻辑
  * Service 是结合项目而编写的逻辑，具有较强的不可复用性
  */
