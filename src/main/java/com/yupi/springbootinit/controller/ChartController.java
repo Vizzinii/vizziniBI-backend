@@ -43,6 +43,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.File;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadPoolExecutor;
 
 import static com.yupi.springbootinit.utils.ExtelUtils.excelToCsv;
 
@@ -68,6 +70,9 @@ public class ChartController {
 
     @Resource
     private RedissonManager redissonManager;
+
+    @Resource
+    private ThreadPoolExecutor threadPoolExecutor;
 
     private final static Gson GSON = new Gson();
 
@@ -272,7 +277,7 @@ public class ChartController {
 
 
     /**
-     * 图表智能分析
+     * 图表智能分析（同步）
      *
      * @param multipartFile
      * @param chartAutoAnalysisRequest
@@ -281,6 +286,132 @@ public class ChartController {
      */
     @PostMapping("/analysis")
     public BaseResponse<BIResponse> ChartAutoAnalysis(@RequestPart("file") MultipartFile multipartFile,
+                                                      ChartAutoAnalysisRequest chartAutoAnalysisRequest, HttpServletRequest request) {
+
+        // 读取用户信息，确保BI平台必须登录使用
+        User loginUser = userService.getLoginUser(request);
+
+        // 获取web端输入的信息
+        String name = chartAutoAnalysisRequest.getName();
+        String goal = chartAutoAnalysisRequest.getGoal();
+        String chartType = chartAutoAnalysisRequest.getChartType();
+
+        // 校验
+        ThrowUtils.throwIf(StringUtils.isNotBlank(name) && name.length()>100 ,ErrorCode.PARAMS_ERROR,"图表名称过长");
+        ThrowUtils.throwIf(StringUtils.isBlank(goal),ErrorCode.PARAMS_ERROR,"分析目标为空");
+
+        // 校验文件大小与名称
+        long size = multipartFile.getSize();
+        String originalFilename = multipartFile.getOriginalFilename();
+        final long ONE_MB = 1024 * 1024L;
+        ThrowUtils.throwIf(size > ONE_MB, ErrorCode.PARAMS_ERROR,"上传文件过大");
+
+        // 校验文件类型（当前安全性仍较低）
+        String suffix = FileUtil.getSuffix(originalFilename);
+        final List<String> validFileSuffix = Arrays.asList("xlsx");
+        ThrowUtils.throwIf(!validFileSuffix.contains(suffix), ErrorCode.PARAMS_ERROR,"文件格式错误");
+
+        // 限流判断（这里是限制每个用户访问当前方法的次数，不影响用户访问其它方法）
+        redissonManager.doRateLimit("ChartAutoAnalysis_" + loginUser.getId());
+
+        // 读取用户输入的分析目标
+        StringBuilder userInput = new StringBuilder();
+        //userInput.append("你是一位数据分析师。接下来我会给你我的分析目标和原始数据，请你告诉我你的分析结论。").append("\n"); //预设已经在manager里实现
+
+        // 首先填充分析需求
+        userInput.append("分析需求：").append("\n");
+        userInput.append(goal).append("\n");
+
+        // 其次填充需要生成的表类型，用户没有输入时默认生成折线图
+
+        userInput.append("生成图表类型：").append("\n");
+        userInput.append(chartType).append("\n");
+
+
+        // 再填充原始数据
+        userInput.append("原始数据：").append("\n");
+        String result = excelToCsv(multipartFile);
+        userInput.append(result).append("\n");
+
+        // 读取用户上传的文件
+        //String result = excelToCsv(multipartFile);
+        //userInput.append("我的数据是：").append(result).append("\n");
+        //return ResultUtils.success(userInput.toString());
+
+        // 发送 http 请求
+        String juice = sparkManager.sendHttpTOSpark(userInput.toString());
+
+        // 拆分返回结果
+        String[] splits = juice.split("【【【【【");
+        if(splits.length < 1){
+            throw new BusinessException(ErrorCode.PARAMS_ERROR,"生成格式错误，建议重新问一遍");
+        }
+        // 返回结果已经用 【【【【【 分割成两段，其中第一段是 JSON 代码，第二段是分析结论
+        String genChart = splits[1].trim();
+        String genResult = splits[2].trim();
+
+        // 把数据插入到数据库
+        Chart chart = new Chart();
+        chart.setName(name);
+        chart.setGoal(goal);
+        chart.setChartType(chartType);
+        chart.setChartData(result); //csv数据
+        chart.setGenChart(genChart);
+        chart.setGenResult(genResult);
+        chart.setUserId(loginUser.getId());
+        boolean saveResult = chartService.save(chart);
+        ThrowUtils.throwIf(!saveResult,ErrorCode.OPERATION_ERROR,"图表信息保存失败");
+        // TODO 把每一次查询的原始数据表格 单独用一个表来插入，而不是把原始数据作为chart表的字段
+        // 解决方案：分库分表
+        // （因为单个用户上传的文件过大可能导致所有用户在查询表格时，都需要读取该表项，进而降低整体的查询开销）
+        // 分开存储：用每个chart唯一的id来给每个图表取名，降低查询开销
+        // 分开查询：之前是直接查询 chart 表取 chartData 字段，分表之后是读取每个chart 单独的 chart_{id} 数据表（用Mybatis的动态Sql实现）
+
+
+        // 把返回结果封装到vo里，返回给前端
+        BIResponse biResponse = new BIResponse();
+        biResponse.setGenChart(genChart);
+        biResponse.setGenResult(genResult);
+        biResponse.setChartId(chart.getId());
+
+        return ResultUtils.success(biResponse);
+//
+//        User loginUser = userService.getLoginUser(request);
+//        // 文件目录：根据业务、用户来划分
+//        String uuid = RandomStringUtils.randomAlphanumeric(8);
+//        String filename = uuid + "-" + multipartFile.getOriginalFilename();
+//
+//        File file = null;
+//        try {
+//
+//            // 返回可访问地址
+//            return ResultUtils.success("");
+//        } catch (Exception e) {
+////            log.error("file upload error, filepath = " + filepath, e);
+//            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "上传失败");
+//        } finally {
+//            if (file != null) {
+//                // 删除临时文件
+//                boolean delete = file.delete();
+//                if (!delete) {
+////                    log.error("file delete error, filepath = {}", filepath);
+//                }
+//            }
+//        }
+    }
+
+
+
+    /**
+     * 图表智能分析（异步）
+     *
+     * @param multipartFile
+     * @param chartAutoAnalysisRequest
+     * @param request
+     * @return
+     */
+    @PostMapping("/analysis/async")
+    public BaseResponse<BIResponse> ChartAutoAnalysisAsync(@RequestPart("filchartAutoAnalysisAsynce") MultipartFile multipartFile,
                                                   ChartAutoAnalysisRequest chartAutoAnalysisRequest, HttpServletRequest request) {
 
         // 读取用户信息，确保BI平台必须登录使用
@@ -333,29 +464,76 @@ public class ChartController {
         //userInput.append("我的数据是：").append(result).append("\n");
         //return ResultUtils.success(userInput.toString());
 
-        // 发送 http 请求
-        String juice = sparkManager.sendHttpTOSpark(userInput.toString());
-
-        // 拆分返回结果
-        String[] splits = juice.split("【【【【【");
-        if(splits.length < 1){
-            throw new BusinessException(ErrorCode.PARAMS_ERROR,"生成格式错误，建议重新问一遍");
-        }
-        // 返回结果已经用 【【【【【 分割成两段，其中第一段是 JSON 代码，第二段是分析结论
-        String genChart = splits[1].trim();
-        String genResult = splits[2].trim();
-
         // 把数据插入到数据库
         Chart chart = new Chart();
         chart.setName(name);
         chart.setGoal(goal);
         chart.setChartType(chartType);
         chart.setChartData(result); //csv数据
-        chart.setGenChart(genChart);
-        chart.setGenResult(genResult);
+        chart.setStatus("wait");
         chart.setUserId(loginUser.getId());
         boolean saveResult = chartService.save(chart);
-        ThrowUtils.throwIf(!saveResult,ErrorCode.OPERATION_ERROR,"图表信息保存失败");
+        ThrowUtils.throwIf(!saveResult,ErrorCode.OPERATION_ERROR,"Fail to 图表信息保存失败");
+
+        // 加入异步化逻辑，用线程工厂和线程来控制提交生成的操作
+        CompletableFuture.runAsync(() -> {
+
+            // 修改图表状态为“执行中”，执行结束后更改为“执行成功”或“执行失败”
+            // 这一操作的主要目的是为了防止任务的重复提交和执行
+            Chart updatechart = new Chart();
+            updatechart.setId(chart.getId());
+            updatechart.setStatus("running");
+            boolean update = chartService.updateById(updatechart);
+            if (!update) {
+                updatechart.setStatus("failed");
+                throw new BusinessException(ErrorCode.OPERATION_ERROR,"Fail to 更改图表状态为running");
+            }
+
+            // 发送 http 请求
+            String juice = sparkManager.sendHttpTOSpark(userInput.toString());
+
+            // 拆分返回结果
+            String[] splits = juice.split("【【【【【");
+            if(splits.length < 2){
+                updatechart.setStatus("failed");
+                throw new BusinessException(ErrorCode.PARAMS_ERROR,"生成格式错误，建议重新问一遍");
+            }
+            // 返回结果已经用 【【【【【 分割成两段，其中第一段是 JSON 代码，第二段是分析结论
+            String genChart = splits[1].trim();
+            String genResult = splits[2].trim();
+
+            // 把最后的结果再写回数据库
+            Chart updatechartResult = new Chart();
+            updatechartResult.setId(chart.getId());
+            updatechartResult.setStatus("succeed");
+            updatechartResult.setGenChart(genChart);
+            updatechartResult.setGenResult(genResult);
+            boolean updateResult = chartService.updateById(updatechartResult);
+            if (!updateResult) {
+                updatechartResult.setStatus("failed");
+                throw new BusinessException(ErrorCode.OPERATION_ERROR,"Fail to 更改图表状态为succeed");
+            }
+
+        } , threadPoolExecutor);
+
+        BIResponse biResponse = new BIResponse();
+        biResponse.setChartId(chart.getId());
+        return ResultUtils.success(biResponse);
+
+
+
+
+
+
+//        chart.setName(name);
+//        chart.setGoal(goal);
+//        chart.setChartType(chartType);
+//        chart.setChartData(result); //csv数据
+//        chart.setGenChart(genChart);
+//        chart.setGenResult(genResult);
+//        chart.setUserId(loginUser.getId());
+//        boolean saveResult = chartService.save(chart);
+//        ThrowUtils.throwIf(!saveResult,ErrorCode.OPERATION_ERROR,"图表信息保存失败");
         // TODO 把每一次查询的原始数据表格 单独用一个表来插入，而不是把原始数据作为chart表的字段
         // 解决方案：分库分表
         // （因为单个用户上传的文件过大可能导致所有用户在查询表格时，都需要读取该表项，进而降低整体的查询开销）
@@ -364,12 +542,12 @@ public class ChartController {
 
 
         // 把返回结果封装到vo里，返回给前端
-        BIResponse biResponse = new BIResponse();
-        biResponse.setGenChart(genChart);
-        biResponse.setGenResult(genResult);
-        biResponse.setChartId(chart.getId());
-
-        return ResultUtils.success(biResponse);
+//        BIResponse biResponse = new BIResponse();
+//        biResponse.setGenChart(genChart);
+//        biResponse.setGenResult(genResult);
+//        biResponse.setChartId(chart.getId());
+//
+//        return ResultUtils.success(biResponse);
 //
 //        User loginUser = userService.getLoginUser(request);
 //        // 文件目录：根据业务、用户来划分
